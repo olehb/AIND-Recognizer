@@ -36,9 +36,6 @@ class ModelSelector(object):
     def select(self):
         raise NotImplementedError
 
-    def get_model(self, num_hidden_states, n_iter=1000):
-        return GaussianHMM(n_components=num_hidden_states, n_iter=n_iter)
-
     def base_model(self, num_states):
         # with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -84,10 +81,6 @@ class SelectorBIC(ModelSelector):
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        if len(self.sequences) < 3:
-            print(f"Not enough sequences for word {self.this_word}")
-            return None
-
         d = np.empty((0,), dtype=[('num_hidden_states', np.uint8), ('bic_score', np.float64)])
         results = pd.DataFrame(d)
         i = 0
@@ -96,7 +89,7 @@ class SelectorBIC(ModelSelector):
 
         for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
             try:
-                model = self.get_model(num_hidden_states).fit(self.X, self.lengths)
+                model = self.base_model(num_hidden_states).fit(self.X, self.lengths)
                 logL = model.score(self.X, self.lengths)
                 bic_score = -2*logL + bic_score_term
                 results = results.append([{'num_hidden_states': num_hidden_states, 'bic_score': bic_score}])
@@ -112,7 +105,7 @@ class SelectorBIC(ModelSelector):
         if self.verbose:
             print(f"Best model for {self.this_word}: num_hidden_states: {best_num_hidden_states}, BIC: {best_bic_score}")
 
-        return self.get_model(best_num_hidden_states)
+        return self.base_model(best_num_hidden_states)
 
 
 class SelectorDIC(ModelSelector):
@@ -127,8 +120,29 @@ class SelectorDIC(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        d = np.empty((0,), dtype=[('num_hidden_states', np.uint8), ('dic_score', np.float64)])
+        results = pd.DataFrame(d)
+        i = 0
+
+        for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
+            try:
+                model = self.base_model(num_hidden_states).fit(self.X, self.lengths)
+                logL = model.score(self.X, self.lengths)
+                
+                not_this_words = [self.hwords[word] for word in self.hwords if word != self.this_word]
+                antiLogL = sum([model.score(X, length) for X, length in not_this_words])
+                dic_score = logL - antiLogL/len(not_this_words)
+
+                results = results.append([{'num_hidden_states': num_hidden_states, 'dic_score': dic_score}])
+            except:
+                logging.exception(f"{i} hidden states: {num_hidden_states}, word: {self.this_word}")
+
+        best_num_hidden_states = results.loc[results['dic_score'] == results['dic_score'].max()]['num_hidden_states'].tolist()[0]
+        best_dic_score = results['dic_score'].max()
+        if self.verbose:
+            print(f"Best model for {self.this_word}: num_hidden_states: {best_num_hidden_states}, DIC: {best_dic_score}")
+
+        return self.base_model(best_num_hidden_states)
 
 
 class SelectorCV(ModelSelector):
@@ -152,7 +166,7 @@ class SelectorCV(ModelSelector):
             X_test, lengths_test = combine_sequences(cv_test_idx, self.sequences)
             for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
                 try:
-                    model = self.get_model(num_hidden_states).fit(X_train, lengths_train)
+                    model = self.base_model(num_hidden_states).fit(X_train, lengths_train)
                     logL = model.score(X_test, lengths_test)
                     results = results.append([{'num_hidden_states': num_hidden_states, 'log_likelihood': logL}])
                     i += 1
@@ -168,4 +182,4 @@ class SelectorCV(ModelSelector):
         if self.verbose:
             print(f"Best model for {self.this_word}: num_hidden_states: {best_num_hidden_states}, log_likelihood_mean = {best_log_likelihood_mean}")
 
-        return self.get_model(best_num_hidden_states)
+        return self.base_model(best_num_hidden_states)
