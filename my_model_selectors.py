@@ -36,6 +36,9 @@ class ModelSelector(object):
     def select(self):
         raise NotImplementedError
 
+    def get_model(self, num_hidden_states, n_iter=1000):
+        return GaussianHMM(n_components=num_hidden_states, n_iter=n_iter)
+
     def base_model(self, num_states):
         # with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -81,8 +84,35 @@ class SelectorBIC(ModelSelector):
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+        if len(self.sequences) < 3:
+            print(f"Not enough sequences for word {self.this_word}")
+            return None
+
+        d = np.empty((0,), dtype=[('num_hidden_states', np.uint8), ('bic_score', np.float64)])
+        results = pd.DataFrame(d)
+        i = 0
+
+        bic_score_term = len(self.features)*math.log(len(self.sequences))
+
+        for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
+            try:
+                model = self.get_model(num_hidden_states).fit(self.X, self.lengths)
+                logL = model.score(self.X, self.lengths)
+                bic_score = -2*logL + bic_score_term
+                results = results.append([{'num_hidden_states': num_hidden_states, 'bic_score': bic_score}])
+                i += 1
+                if self.verbose:
+                    print(f"{i} hidden states: {num_hidden_states}, BIC: {bic_score}, word: {self.this_word}")
+            except:
+                logging.exception(f"{i} hidden states: {num_hidden_states}, word: {self.this_word}")
+
+
+        best_num_hidden_states = results.loc[results['bic_score'] == results['bic_score'].min()]['num_hidden_states'].tolist()[0]
+        best_bic_score = results['bic_score'].min()
+        if self.verbose:
+            print(f"Best model for {self.this_word}: num_hidden_states: {best_num_hidden_states}, BIC: {best_bic_score}")
+
+        return self.get_model(best_num_hidden_states)
 
 
 class SelectorDIC(ModelSelector):
@@ -105,9 +135,6 @@ class SelectorCV(ModelSelector):
     ''' select best model based on average log Likelihood of cross-validation folds
 
     '''
-
-    def get_model(self, num_hidden_states, n_iter=1000):
-        return GaussianHMM(n_components=num_hidden_states, n_iter=n_iter)
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
