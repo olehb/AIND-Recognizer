@@ -1,12 +1,15 @@
 import math
 import statistics
 import warnings
+import logging
 
 import numpy as np
+import pandas as pd
 from hmmlearn.hmm import GaussianHMM
 from sklearn.model_selection import KFold
 from asl_utils import combine_sequences
 
+from sklearn.model_selection import KFold
 
 class ModelSelector(object):
     '''
@@ -16,7 +19,8 @@ class ModelSelector(object):
     def __init__(self, all_word_sequences: dict, all_word_Xlengths: dict, this_word: str,
                  n_constant=3,
                  min_n_components=2, max_n_components=10,
-                 random_state=14, verbose=False):
+                 random_state=14, verbose=False,
+                 features = ['grnd-rx','grnd-ry','grnd-lx','grnd-ly']):
         self.words = all_word_sequences
         self.hwords = all_word_Xlengths
         self.sequences = all_word_sequences[this_word]
@@ -27,6 +31,7 @@ class ModelSelector(object):
         self.max_n_components = max_n_components
         self.random_state = random_state
         self.verbose = verbose
+        self.features = features
 
     def select(self):
         raise NotImplementedError
@@ -101,8 +106,39 @@ class SelectorCV(ModelSelector):
 
     '''
 
+    def get_model(self, num_hidden_states, n_iter=1000):
+        return GaussianHMM(n_components=num_hidden_states, n_iter=n_iter)
+
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+        split_method = KFold()
+        d = np.empty((0,), dtype=[('num_hidden_states', np.uint8), ('log_likelihood', np.float64)])
+        results = pd.DataFrame(d)
+        i = 0
+        if len(self.sequences) < 3:
+            print(f"Not enough sequences for word {self.this_word}")
+            return None
+
+        for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+            X_train, lengths_train = combine_sequences(cv_train_idx, self.sequences)
+            X_test, lengths_test = combine_sequences(cv_test_idx, self.sequences)
+            for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
+                try:
+                    model = self.get_model(num_hidden_states).fit(X_train, lengths_train)
+                    logL = model.score(X_test, lengths_test)
+                    results = results.append([{'num_hidden_states': num_hidden_states, 'log_likelihood': logL}])
+                    i += 1
+                    if self.verbose:
+                        print(f"{i} hidden states: {num_hidden_states}, log likelihood: {logL}, word: {self.this_word}")
+                except:
+                    logging.exception(f"{i} hidden states: {num_hidden_states}, word: {self.this_word}")
+
+
+        means = results.groupby('num_hidden_states').mean()
+        best_num_hidden_states = means.loc[means['log_likelihood'].idxmax()].name
+        best_log_likelihood_mean = means['log_likelihood'].max()
+        if self.verbose:
+            print(f"Best model for {self.this_word}: num_hidden_states: {best_num_hidden_states}, log_likelihood_mean = {best_log_likelihood_mean}")
+
+        return self.get_model(best_num_hidden_states)
