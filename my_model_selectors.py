@@ -170,7 +170,8 @@ class SelectorCV(ModelSelector):
 
         i = 0
         results = self.init_results()
-        split_method = KFold(2) if len(self.sequences) == 2 else KFold()
+        num_splits = 5
+        split_method = KFold(len(self.sequences)) if len(self.sequences) <= num_splits else KFold(num_splits)
         for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
             X_train, lengths_train = combine_sequences(cv_train_idx, self.sequences)
             X_test, lengths_test = combine_sequences(cv_test_idx, self.sequences)
