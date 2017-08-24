@@ -153,13 +153,14 @@ class SelectorCV(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        split_method = KFold()
         d = np.empty((0,), dtype=[('num_hidden_states', np.uint8), ('log_likelihood', np.float64)])
         results = pd.DataFrame(d)
         i = 0
-        if len(self.sequences) < 3:
+        if len(self.sequences) < 2:
             print(f"Not enough sequences for word {self.this_word}")
             return None
+
+        split_method = KFold(2) if len(self.sequences) == 2 else KFold()
 
         for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
             X_train, lengths_train = combine_sequences(cv_train_idx, self.sequences)
