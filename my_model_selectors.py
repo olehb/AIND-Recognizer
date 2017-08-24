@@ -11,6 +11,10 @@ from asl_utils import combine_sequences
 
 from sklearn.model_selection import KFold
 
+import math
+from matplotlib import (cm, pyplot as plt, mlab)
+
+
 class ModelSelector(object):
     '''
     base class for model selection (strategy design pattern)
@@ -36,6 +40,12 @@ class ModelSelector(object):
     def select(self):
         raise NotImplementedError
 
+    def init_results(self):
+        d = np.empty((0,), dtype=[('num_hidden_states', np.uint8),
+                                  ('log_likelihood', np.float64),
+                                  ('score', np.float64)])
+        return pd.DataFrame(d)
+
     def base_model(self, num_states):
         # with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -50,6 +60,15 @@ class ModelSelector(object):
             if self.verbose:
                 print("failure on {} with {} states".format(self.this_word, num_states))
             return None
+
+    def _process_results(self, results, best_score):
+        print(results)
+        print(results[results['score'] == best_score]['num_hidden_states'])
+        best_num_hidden_states = results[results['score'] == best_score]['num_hidden_states'].tolist()[0]
+        visualize(results, best_num_hidden_states)
+        if self.verbose:
+            print(f"Best model for {self.this_word}: num_hidden_states: {best_num_hidden_states}, score = {best_score}")
+        return self.base_model(best_num_hidden_states)
 
 
 class SelectorConstant(ModelSelector):
@@ -81,31 +100,26 @@ class SelectorBIC(ModelSelector):
         """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        d = np.empty((0,), dtype=[('num_hidden_states', np.uint8), ('bic_score', np.float64)])
-        results = pd.DataFrame(d)
-        i = 0
+        results = self.init_results()
 
         bic_score_term = len(self.features)*math.log(len(self.sequences))
-
+        i = 0
         for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
             try:
                 model = self.base_model(num_hidden_states).fit(self.X, self.lengths)
                 logL = model.score(self.X, self.lengths)
                 bic_score = -2*logL + bic_score_term
-                results = results.append([{'num_hidden_states': num_hidden_states, 'bic_score': bic_score}])
+                results = results.append([{'num_hidden_states': num_hidden_states,
+                                           'log_likelihood': logL,
+                                           'score': bic_score}])
                 i += 1
                 if self.verbose:
-                    print(f"{i} hidden states: {num_hidden_states}, BIC: {bic_score}, word: {self.this_word}")
+                    print(f"{self.this_word}, {num_hidden_states}, {logL}, {bic_score}")
             except:
                 logging.exception(f"{i} hidden states: {num_hidden_states}, word: {self.this_word}")
 
-
-        best_num_hidden_states = results.loc[results['bic_score'] == results['bic_score'].min()]['num_hidden_states'].tolist()[0]
-        best_bic_score = results['bic_score'].min()
-        if self.verbose:
-            print(f"Best model for {self.this_word}: num_hidden_states: {best_num_hidden_states}, BIC: {best_bic_score}")
-
-        return self.base_model(best_num_hidden_states)
+        best_score = results['score'].min()
+        return self._process_results(results, best_score)
 
 
 class SelectorDIC(ModelSelector):
@@ -120,10 +134,8 @@ class SelectorDIC(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        d = np.empty((0,), dtype=[('num_hidden_states', np.uint8), ('dic_score', np.float64)])
-        results = pd.DataFrame(d)
+        results = self.init_results()
         i = 0
-
         for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
             try:
                 model = self.base_model(num_hidden_states).fit(self.X, self.lengths)
@@ -133,16 +145,16 @@ class SelectorDIC(ModelSelector):
                 antiLogL = sum([model.score(X, length) for X, length in not_this_words])
                 dic_score = logL - antiLogL/len(not_this_words)
 
-                results = results.append([{'num_hidden_states': num_hidden_states, 'dic_score': dic_score}])
+                results = results.append([{'num_hidden_states': num_hidden_states,
+                                           'log_likelihood': logL,
+                                           'score': dic_score}])
+                if self.verbose:
+                    print(f"{self.this_word}, {num_hidden_states}, {logL}, {dic_score}")
             except:
                 logging.exception(f"{i} hidden states: {num_hidden_states}, word: {self.this_word}")
 
-        best_num_hidden_states = results.loc[results['dic_score'] == results['dic_score'].max()]['num_hidden_states'].tolist()[0]
-        best_dic_score = results['dic_score'].max()
-        if self.verbose:
-            print(f"Best model for {self.this_word}: num_hidden_states: {best_num_hidden_states}, DIC: {best_dic_score}")
-
-        return self.base_model(best_num_hidden_states)
+        best_score = results['score'].max()
+        return self._process_results(results, best_score)
 
 
 class SelectorCV(ModelSelector):
@@ -152,35 +164,40 @@ class SelectorCV(ModelSelector):
 
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-        d = np.empty((0,), dtype=[('num_hidden_states', np.uint8), ('log_likelihood', np.float64)])
-        results = pd.DataFrame(d)
-        i = 0
         if len(self.sequences) < 2:
             print(f"Not enough sequences for word {self.this_word}")
             return None
 
+        i = 0
+        results = self.init_results()
         split_method = KFold(2) if len(self.sequences) == 2 else KFold()
-
         for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
             X_train, lengths_train = combine_sequences(cv_train_idx, self.sequences)
             X_test, lengths_test = combine_sequences(cv_test_idx, self.sequences)
             for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
                 try:
                     model = self.base_model(num_hidden_states).fit(X_train, lengths_train)
+                    logL_train = model.score(X_train, lengths_train)
                     logL = model.score(X_test, lengths_test)
-                    results = results.append([{'num_hidden_states': num_hidden_states, 'log_likelihood': logL}])
+                    results = results.append([{'num_hidden_states': num_hidden_states,
+                                               'log_likelihood': logL_train,
+                                               'score': logL}])
                     i += 1
                     if self.verbose:
-                        print(f"{i} hidden states: {num_hidden_states}, log likelihood: {logL}, word: {self.this_word}")
+                        print(f"{self.this_word}, {num_hidden_states}, {logL_train}, {logL}")
                 except:
                     logging.exception(f"{i} hidden states: {num_hidden_states}, word: {self.this_word}")
 
+        means = results.groupby('num_hidden_states', as_index=False).mean()
+        best_score = means['score'].max()
+        return self._process_results(means, best_score)
 
-        means = results.groupby('num_hidden_states').mean()
-        best_num_hidden_states = means.loc[means['log_likelihood'].idxmax()].name
-        best_log_likelihood_mean = means['log_likelihood'].max()
-        if self.verbose:
-            print(f"Best model for {self.this_word}: num_hidden_states: {best_num_hidden_states}, log_likelihood_mean = {best_log_likelihood_mean}")
 
-        return self.base_model(best_num_hidden_states)
+def visualize(results, best_num_hidden_states=None):
+    plt.plot(results['num_hidden_states'], results['log_likelihood'], label="logL")
+    plt.plot(results['num_hidden_states'], results['score'], label="score")
+    if best_num_hidden_states is not None:
+        plt.axvline(best_num_hidden_states, 0, 1, color='red', linestyle='dotted')
+    plt.show()
