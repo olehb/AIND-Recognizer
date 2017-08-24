@@ -197,6 +197,7 @@ def visualize(results, best_num_hidden_states=None):
     plt.plot(results['num_hidden_states'], results['log_likelihood'], label="logL")
     plt.plot(results['num_hidden_states'], results['score'], label="score")
     plt.legend()
+    plt.xlabel('# of states')
     if best_num_hidden_states is not None:
         plt.axvline(best_num_hidden_states, 0, 1, color='red', linestyle='dotted')
     plt.show()
