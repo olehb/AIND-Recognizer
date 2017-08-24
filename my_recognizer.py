@@ -18,8 +18,17 @@ def recognize(models: dict, test_set: SinglesData):
            ['WORDGUESS0', 'WORDGUESS1', 'WORDGUESS2',...]
    """
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-    probabilities = []
-    guesses = []
-    # TODO implement the recognizer
-    # return probabilities, guesses
-    raise NotImplementedError
+
+    probabilities = [{word: model.score(X, length) for word, model in models}
+                     for X, length in test.get_all_Xlengths()]
+
+    d = np.empty((2, len(test_set.get_all_Xlengths())*len(models)),
+                 dtype=[('word', np.unicode_),
+                        ('logL', np.float64)])
+    prob_df = pd.DataFrame(d)
+    for i, probability in enumerate(probabilities):
+        for word, logL in probability:
+            prob_df[i] = {'word': word, 'logL': logL}
+
+    guesses = prob_df.groupby('word', set_index=False).max()['word'].tolist()
+    return probabilities, guesses
