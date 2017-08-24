@@ -104,7 +104,7 @@ class SelectorBIC(ModelSelector):
         print(f"{self.this_word} has {len(self.sequences)} sequences")
         for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
             try:
-                model = self.base_model(num_hidden_states).fit(self.X, self.lengths)
+                model = self.base_model(num_hidden_states)
                 logL = model.score(self.X, self.lengths)
                 bic_score = -2*logL + num_hidden_states*math.log(len(self.sequences))
                 results = results.append([{'num_hidden_states': num_hidden_states,
@@ -136,7 +136,7 @@ class SelectorDIC(ModelSelector):
         i = 0
         for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
             try:
-                model = self.base_model(num_hidden_states).fit(self.X, self.lengths)
+                model = self.base_model(num_hidden_states)
                 logL = model.score(self.X, self.lengths)
                 
                 not_this_words = [self.hwords[word] for word in self.hwords if word != self.this_word]
@@ -177,7 +177,8 @@ class SelectorCV(ModelSelector):
             X_test, lengths_test = combine_sequences(cv_test_idx, self.sequences)
             for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
                 try:
-                    model = self.base_model(num_hidden_states).fit(X_train, lengths_train)
+                    model = GaussianHMM(n_components=num_hidden_states, covariance_type="diag", n_iter=1000,
+                                        random_state=self.random_state, verbose=False).fit(X_train, lengths_train)
                     logL_train = model.score(X_train, lengths_train)
                     logL = model.score(X_test, lengths_test)
                     results = results.append([{'num_hidden_states': num_hidden_states,
