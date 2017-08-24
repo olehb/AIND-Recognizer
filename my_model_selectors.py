@@ -100,13 +100,13 @@ class SelectorBIC(ModelSelector):
 
         results = self.init_results()
 
-        bic_score_term = len(self.features)*math.log(len(self.sequences))
         i = 0
+        print(f"{self.this_word} has {len(self.sequences)} sequences")
         for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
             try:
                 model = self.base_model(num_hidden_states).fit(self.X, self.lengths)
                 logL = model.score(self.X, self.lengths)
-                bic_score = -2*logL + bic_score_term
+                bic_score = -2*logL + num_hidden_states*math.log(len(self.sequences))
                 results = results.append([{'num_hidden_states': num_hidden_states,
                                            'log_likelihood': logL,
                                            'score': bic_score}])
