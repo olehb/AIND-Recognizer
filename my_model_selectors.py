@@ -62,8 +62,6 @@ class ModelSelector(object):
             return None
 
     def _process_results(self, results, best_score):
-        print(results)
-        print(results[results['score'] == best_score]['num_hidden_states'])
         best_num_hidden_states = results[results['score'] == best_score]['num_hidden_states'].tolist()[0]
         visualize(results, best_num_hidden_states)
         if self.verbose:
@@ -198,6 +196,7 @@ class SelectorCV(ModelSelector):
 def visualize(results, best_num_hidden_states=None):
     plt.plot(results['num_hidden_states'], results['log_likelihood'], label="logL")
     plt.plot(results['num_hidden_states'], results['score'], label="score")
+    plt.legend()
     if best_num_hidden_states is not None:
         plt.axvline(best_num_hidden_states, 0, 1, color='red', linestyle='dotted')
     plt.show()
