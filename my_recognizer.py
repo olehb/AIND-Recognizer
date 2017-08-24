@@ -1,4 +1,6 @@
 import warnings
+import numpy as np
+import pandas as pd
 from asl_data import SinglesData
 
 
@@ -19,16 +21,23 @@ def recognize(models: dict, test_set: SinglesData):
    """
     warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-    probabilities = [{word: model.score(X, length) for word, model in models}
-                     for X, length in test.get_all_Xlengths()]
+    probabilities = []
+    guesses = []
+    for X, length in test_set.get_all_Xlengths().values():
+        probability = {}
+        for word, model in models.items():
+            try:
+                probability[word] = model.score(X, length)
+            except:
+                pass
+        probabilities.append(probability)
 
-    d = np.empty((2, len(test_set.get_all_Xlengths())*len(models)),
-                 dtype=[('word', np.unicode_),
-                        ('logL', np.float64)])
-    prob_df = pd.DataFrame(d)
-    for i, probability in enumerate(probabilities):
-        for word, logL in probability:
-            prob_df[i] = {'word': word, 'logL': logL}
+    for probability in probabilities:
+        max_logL = max(probability.values())
+        for word, logL in probability.items():
+            if logL == max_logL:
+                guesses.append(word)
+                break
 
-    guesses = prob_df.groupby('word', set_index=False).max()['word'].tolist()
     return probabilities, guesses
+
