@@ -107,7 +107,9 @@ class SelectorBIC(ModelSelector):
                 model = self.base_model(num_hidden_states)
                 if model:
                     logL = model.score(self.X, self.lengths)
-                    bic_score = -2*logL + num_hidden_states*math.log(len(self.sequences))
+                    num_data_points, num_features = self.X.shape
+                    p = num_hidden_states**2 + 2*num_hidden_states*num_features - 1
+                    bic_score = -2*logL + p*math.log(num_data_points)
                     results = results.append([{'num_hidden_states': num_hidden_states,
                                                'log_likelihood': logL,
                                                'score': bic_score}])
