@@ -58,7 +58,7 @@ class ModelSelector(object):
             return hmm_model
         except:
             if self.verbose:
-                print("failure on {} with {} states".format(self.this_word, num_states))
+                print("failed to create model on {} with {} states".format(self.this_word, num_states))
             return None
 
     def _process_results(self, results, best_score):
@@ -105,14 +105,15 @@ class SelectorBIC(ModelSelector):
         for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
             try:
                 model = self.base_model(num_hidden_states)
-                logL = model.score(self.X, self.lengths)
-                bic_score = -2*logL + num_hidden_states*math.log(len(self.sequences))
-                results = results.append([{'num_hidden_states': num_hidden_states,
-                                           'log_likelihood': logL,
-                                           'score': bic_score}])
-                i += 1
-                if self.verbose:
-                    print(f"{self.this_word}, {num_hidden_states}, {logL}, {bic_score}")
+                if model:
+                    logL = model.score(self.X, self.lengths)
+                    bic_score = -2*logL + num_hidden_states*math.log(len(self.sequences))
+                    results = results.append([{'num_hidden_states': num_hidden_states,
+                                               'log_likelihood': logL,
+                                               'score': bic_score}])
+                    i += 1
+                    if self.verbose:
+                        print(f"{self.this_word}, {num_hidden_states}, {logL}, {bic_score}")
             except:
                 logging.exception(f"{i} hidden states: {num_hidden_states}, word: {self.this_word}")
 
@@ -137,17 +138,18 @@ class SelectorDIC(ModelSelector):
         for num_hidden_states in range(self.min_n_components, self.max_n_components+1):
             try:
                 model = self.base_model(num_hidden_states)
-                logL = model.score(self.X, self.lengths)
-                
-                not_this_words = [self.hwords[word] for word in self.hwords if word != self.this_word]
-                antiLogL = sum([model.score(X, length) for X, length in not_this_words])
-                dic_score = logL - antiLogL/len(not_this_words)
+                if model:
+                    logL = model.score(self.X, self.lengths)
+                    
+                    not_this_words = [self.hwords[word] for word in self.hwords if word != self.this_word]
+                    antiLogL = sum([model.score(X, length) for X, length in not_this_words])
+                    dic_score = logL - antiLogL/len(not_this_words)
 
-                results = results.append([{'num_hidden_states': num_hidden_states,
-                                           'log_likelihood': logL,
-                                           'score': dic_score}])
-                if self.verbose:
-                    print(f"{self.this_word}, {num_hidden_states}, {logL}, {dic_score}")
+                    results = results.append([{'num_hidden_states': num_hidden_states,
+                                               'log_likelihood': logL,
+                                               'score': dic_score}])
+                    if self.verbose:
+                        print(f"{self.this_word}, {num_hidden_states}, {logL}, {dic_score}")
             except:
                 logging.exception(f"{i} hidden states: {num_hidden_states}, word: {self.this_word}")
 
